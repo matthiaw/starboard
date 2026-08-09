@@ -1,0 +1,71 @@
+{
+  "_comment": [
+    "Copy to ~/.config/starboard/config.json. Every key is optional — delete",
+    "one and its default from StarboardConfig applies. Read once at launch, so",
+    "reload with: launchctl kickstart -k gui/$(id -u)/com.starboard.app",
+    "Problems are reported in ~/Library/Logs/Starboard.log and never stop the",
+    "panel from starting."
+  ],
+
+  "_comment_size": [
+    "Width, x and height normally track the Dock and are not settable — that",
+    "is the point of the app. What you can change is how much fits in that",
+    "height: fontSize and padding together decide the row count. The defaults",
+    "give exactly two rows at a Dock height around 57-60pt.",
+    "Cmd+E (or the right-click menu) expands to full screen height; set",
+    "startExpanded to open that way. The fallback block below only applies",
+    "when the Dock cannot be read at all — no Accessibility permission, a",
+    "left/right Dock, or a Dock on a secondary display."
+  ],
+  "fontSize": 11,
+  "padding": 8,
+  "cornerRadius": 12,
+  "startExpanded": false,
+  "fallback": { "width": 300, "height": 64, "rightMargin": 8 },
+
+  "_comment_look": [
+    "tint is Starboard's own layer over the system blur; alpha is the",
+    "transparency. Either { hex, alpha } or { red, green, blue, alpha } with",
+    "0...1 components. material is the NSVisualEffectView material behind it:",
+    "menu, popover, hudWindow, sidebar, titlebar, selection, headerView,",
+    "sheet, windowBackground, fullScreenUI, toolTip, contentBackground,",
+    "underWindowBackground, underPageBackground."
+  ],
+  "tint": { "hex": "#050910", "alpha": 0.65 },
+  "material": "menu",
+
+  "_comment_font": [
+    "First name that resolves wins. Nerd Font variants come first because",
+    "prompt themes like Powerlevel10k draw separators from private-use ranges",
+    "no stock macOS font carries."
+  ],
+  "fontNames": [
+    "MesloLGS NF",
+    "MesloLGS Nerd Font",
+    "Hack Nerd Font",
+    "Menlo"
+  ],
+
+  "_comment_palette": [
+    "The 16 ANSI colours in order: black, red, green, yellow, blue, magenta,",
+    "cyan, white, then the bright variants. All 16 or none — a partial list is",
+    "reported and ignored rather than padded with colours you did not choose.",
+    "This only changes what an ANSI code renders as; which colour your prompt",
+    "theme picks for a segment is decided in your shell config."
+  ],
+  "palette": [
+    "#141821", "#c64a5a", "#4f9d69", "#c49a3e",
+    "#3a7ca5", "#856ea8", "#459c9c", "#c4beac",
+    "#4b5763", "#de6676", "#6fbf87", "#e0ba69",
+    "#5fa8d3", "#a98fc9", "#72d6cf", "#e6e0d0"
+  ],
+
+  "_comment_dock": [
+    "Empirical corrections between the Dock's Accessibility bounding box and",
+    "its painted chrome. Nudge these if the panel's edges drift from the",
+    "Dock's on your display. dockTrackingInterval is the poll period in",
+    "seconds."
+  ],
+  "dockCorrection": { "bottom": 5, "top": 5 },
+  "dockTrackingInterval": 1.0
+}

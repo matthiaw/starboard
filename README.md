@@ -97,6 +97,61 @@ itself is. That's the point: run a command in whatever project you're
 in, then go straight back to the editor, without switching apps or
 losing your place.
 
+## Configuration
+
+`~/.config/starboard/config.json`, all keys optional. There was no config file
+before: tint, transparency, font, size and palette were compile-time constants,
+so changing any of them meant editing Swift and rebuilding.
+
+```bash
+cp config.example.json ~/.config/starboard/config.json
+$EDITOR ~/.config/starboard/config.json
+launchctl kickstart -k gui/$(id -u)/com.starboard.app   # read at launch only
+```
+
+Or right-click the panel → **Reveal Config in Finder**, which writes a starter
+file when there is none.
+
+| Key | What it does |
+|---|---|
+| `fontSize`, `padding` | together decide how many rows fit in the Dock-height panel; the defaults give two |
+| `startExpanded` | open at full screen height, as if ⌘E had been pressed |
+| `tint` | Starboard's own layer over the blur — `{ "hex": "#050910", "alpha": 0.65 }` or `{ red, green, blue, alpha }`; **`alpha` is the transparency** |
+| `material` | the `NSVisualEffectView` material behind the tint (`menu`, `hudWindow`, `popover`, `sidebar`, …) |
+| `fontNames` | preferred fonts, best first; the first that resolves wins |
+| `palette` | the 16 ANSI colours as `#rrggbb`, all 16 or none |
+| `fallback` | size used only when the Dock cannot be read at all |
+| `dockCorrection`, `dockTrackingInterval` | Dock-tracking fine-tuning |
+
+**Size is mostly not yours to set, by design.** Width, x and height track the
+Dock; that is what the app is for. What you can change is how much fits in that
+height (`fontSize`, `padding`) and whether it opens expanded. `fallback` only
+applies when the Dock cannot be read — no Accessibility permission, a left or
+right Dock, or a Dock on a secondary display.
+
+A malformed file never stops the panel from starting: every problem is reported
+in `~/Library/Logs/Starboard.log` and then ignored. Keys starting with `_` are
+treated as comments, since JSON has none.
+
+## Right-click menu
+
+Copy, Paste, Select All, Toggle Expanded, Reveal Config in Finder, Quit. The key
+equivalents (⌘C/⌘V/⌘A/⌘E/⌘Q) still work; the menu exists because there is no
+menu bar, no Dock icon and no title bar, so a user who does not already know ⌘E
+has no way to discover it.
+
+## Tests
+
+```bash
+scripts/test-config.sh          # 15 checks on the config parser
+scripts/test-term-program.sh    # 4 checks that TERM_PROGRAM reaches the shell
+```
+
+Both drive the real built app rather than mocking anything, and both start with a
+negative control — a knowingly broken input that must produce output — because
+every "this is silent" assertion passes vacuously when nothing is captured at
+all. They skip rather than fail without a GUI session.
+
 ## Requirements
 
 - macOS 13+

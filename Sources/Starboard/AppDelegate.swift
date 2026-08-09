@@ -21,82 +21,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Dock live, only the top edge changes.
     private var isExpanded = false
 
-    private let fallbackWidth: CGFloat = 300
-    private let fallbackHeight: CGFloat = 64
-    private let fallbackRightMargin: CGFloat = 8
-    private let cornerRadius: CGFloat = 12
+    /// Read once at launch from ~/.config/starboard/config.json. Everything
+    /// below used to be a compile-time constant; the defaults still live in
+    /// StarboardConfig, the file only overrides them. See config.example.json.
+    private let config: StarboardConfig
+
+    private var fallbackWidth: CGFloat { config.fallbackWidth }
+    private var fallbackHeight: CGFloat { config.fallbackHeight }
+    private var fallbackRightMargin: CGFloat { config.fallbackRightMargin }
+    private var cornerRadius: CGFloat { config.cornerRadius }
     /// `com.apple.dock`'s preferences domain -- read directly (not via
     /// Accessibility) to detect orientation/auto-hide, since both are
     /// meaningful even before Accessibility permission is granted.
     private let dockPreferencesDomain = "com.apple.dock" as CFString
-    /// Starboard's own panel color — a near-black deep navy, independent of
-    /// the Dock's material and whatever's on the desktop behind it. First
-    /// pass; tune the RGB/alpha here to taste.
-    private let panelTintColor = NSColor(calibratedRed: 0.02, green: 0.035, blue: 0.06, alpha: 0.65)
-    private let dockTrackingInterval: TimeInterval = 1.0
+    private var panelTintColor: NSColor { config.tint }
+    private var dockTrackingInterval: TimeInterval { config.dockTrackingInterval }
     /// Empirical corrections for the gap between the Dock's AXList (icon
     /// row) bounding box and its actual painted chrome, which Accessibility
-    /// doesn't expose directly. Tuned against a real Dock; nudge these if
-    /// the panel's edges drift from the Dock's over time or on other
-    /// displays/tile sizes.
-    private let dockBottomCorrection: CGFloat = 5
-    private let dockTopCorrection: CGFloat = 5
-    /// Inset between the panel's edge and the terminal content, and the
-    /// font size that content renders at. Chosen together so that, at a
-    /// Dock height around 57-60pt, exactly two terminal rows fit — the
-    /// current line and the one before it.
-    private let terminalPadding: CGFloat = 8
+    /// doesn't expose directly. Tuned against a real Dock; nudge these via
+    /// dockCorrection in the config if the panel's edges drift on other
+    /// displays or tile sizes.
+    private var dockBottomCorrection: CGFloat { config.dockBottomCorrection }
+    private var dockTopCorrection: CGFloat { config.dockTopCorrection }
+    /// Inset between the panel's edge and the terminal content. Together with
+    /// fontSize this decides how many rows fit: at a Dock height around
+    /// 57-60pt the defaults give exactly two — the current line and the one
+    /// before it. Smaller font or padding buys more rows in the same height.
+    private var terminalPadding: CGFloat { config.padding }
     /// The shell launched in the panel's pseudo-terminal, and the value
     /// exported as `SHELL` to it (see `childEnvironment`) — kept as one
     /// constant so those two can't drift apart.
     private static let shellExecutable = "/bin/zsh"
-    /// `static` so `init()` can reference it while initializing
-    /// `terminalFont` — Swift forbids touching `self` before every stored
-    /// property is set, which is why the font size used to be duplicated as
-    /// a literal there instead.
-    private static let terminalFontSize: CGFloat = 11
-    /// Preferred terminal fonts, best first. Nerd Font variants come ahead
-    /// of plain Menlo because prompt themes like Powerlevel10k draw their
-    /// separators and icons from the Nerd Font private-use ranges
-    /// (e.g.  U+E0B0,  U+F179) that no stock macOS font carries — without
-    /// one, those render as Last Resort's box-with-question-mark. Add your
-    /// own to the front of this list; the first name that resolves wins.
-    private static let preferredFontNames = [
-        "MesloLGS NF",
-        "MesloLGS Nerd Font",
-        "Hack Nerd Font",
-        "FiraCode Nerd Font",
-        "JetBrainsMono Nerd Font",
-        "Menlo",
-    ]
     private let terminalFont: NSFont
-    /// Starboard's own ANSI palette (indices 0-15: black/red/green/yellow/
-    /// blue/magenta/cyan/white, then bright variants) — muted ocean blues
-    /// and teals instead of the harsh primaries most terminal defaults use,
-    /// with red/green nodding to a ship's port/starboard navigation lights.
-    /// This only changes what an ANSI color code *renders as*; it has no
-    /// effect on which color a shell prompt theme chooses to use for a
-    /// given segment — that logic lives in the user's own shell config
-    /// (e.g. oh-my-zsh), independent of the terminal emulator. First pass;
-    /// tune to taste.
-    private let starboardAnsiPalette: [Color] = [
-        ansiColor(20, 24, 33),    // black
-        ansiColor(198, 74, 90),   // red — port light
-        ansiColor(79, 157, 105),  // green — starboard light
-        ansiColor(196, 154, 62),  // yellow — brass
-        ansiColor(58, 124, 165),  // blue — deep ocean
-        ansiColor(133, 110, 168), // magenta — dusk
-        ansiColor(69, 156, 156),  // cyan — seafoam
-        ansiColor(196, 190, 172), // white — sand
-        ansiColor(75, 87, 99),    // bright black — slate
-        ansiColor(222, 102, 118), // bright red
-        ansiColor(111, 191, 135), // bright green
-        ansiColor(224, 186, 105), // bright yellow
-        ansiColor(95, 168, 211),  // bright blue
-        ansiColor(169, 143, 201), // bright magenta
-        ansiColor(114, 214, 207), // bright cyan
-        ansiColor(230, 224, 208), // bright white — foam
-    ]
+    private var starboardAnsiPalette: [Color] { config.palette }
 
     override init() {
         // First installed font from preferredFontNames, falling back to the
@@ -110,9 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // NSFont(name:) returns nil for a name that isn't installed, so a
         // typo here degrades silently rather than failing the build — worth
         // checking the resolved font if the prompt looks wrong.
-        let size = Self.terminalFontSize
-        terminalFont = Self.preferredFontNames.lazy.compactMap { NSFont(name: $0, size: size) }.first
-            ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let loaded = StarboardConfig.load()
+        config = loaded
+        terminalFont = loaded.fontNames.lazy.compactMap { NSFont(name: $0, size: loaded.fontSize) }.first
+            ?? NSFont.monospacedSystemFont(ofSize: loaded.fontSize, weight: .regular)
         super.init()
     }
 
@@ -124,6 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // discarded) to drive the in-terminal hint fed below.
         let promptOptions = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         let accessibilityTrusted = AXIsProcessTrustedWithOptions(promptOptions)
+
+        isExpanded = config.startExpanded
 
         setUpMainMenu()
 
@@ -145,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let effectView = NSVisualEffectView(frame: NSRect(origin: .zero, size: panel.frame.size))
         effectView.autoresizingMask = [.width, .height]
-        effectView.material = .menu
+        effectView.material = config.material
         effectView.blendingMode = .behindWindow
         effectView.state = .active
         effectView.wantsLayer = true
@@ -191,7 +151,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // tooltip costs nothing until someone's cursor is actually
         // sitting still over the panel, which is exactly when it's useful
         // and never otherwise in the way.
-        terminal.toolTip = "⌘E expand · ⌘Q quit"
+        terminal.toolTip = "⌘E expand · ⌘Q quit · right-click for menu"
+        // A right-click menu, because the key equivalents are the only other way
+        // in: this app has no menu bar it can show, no Dock icon and no title
+        // bar, so a user who does not already know ⌘E cannot discover it. AppKit
+        // pops this for a right-click on the view without any mouse handling of
+        // our own, and it leaves SwiftTerm's left-button selection untouched.
+        terminal.menu = buildContextMenu()
 
         effectView.addSubview(terminal)
         panel.contentView = effectView
@@ -318,6 +284,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
     }
+
+    /// The right-click menu. Same actions as the hidden main menu, which is only
+    /// reachable by key equivalent — this is the discoverable path to them.
+    private func buildContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        menu.addItem(.separator())
+
+        let expand = NSMenuItem(title: "Toggle Expanded",
+                                action: #selector(toggleExpanded(_:)), keyEquivalent: "e")
+        expand.target = self
+        menu.addItem(expand)
+
+        let reveal = NSMenuItem(title: "Reveal Config in Finder",
+                                action: #selector(revealConfig(_:)), keyEquivalent: "")
+        reveal.target = self
+        menu.addItem(reveal)
+
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit Starboard",
+                              action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(quit)
+        return menu
+    }
+
+    /// Opens the config directory, creating an annotated starter file when there
+    /// is none — otherwise "edit your config" is advice with nowhere to go.
+    @objc private func revealConfig(_ sender: Any?) {
+        let url = StarboardConfig.path
+        let directory = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? Data(Self.starterConfig.utf8).write(to: url)
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private static let starterConfig = """
+    {
+      "_comment": "Starboard config. Delete any key to fall back to its default.",
+      "fontSize": 11,
+      "padding": 8,
+      "cornerRadius": 12,
+      "startExpanded": false,
+      "tint": { "hex": "#050910", "alpha": 0.65 },
+      "material": "menu",
+      "fallback": { "width": 300, "height": 64, "rightMargin": 8 }
+    }
+
+    """
 
     /// Cmd+E, resolved the same key-equivalent way as Copy/Paste/Select All
     /// above — reaches here even though the hidden menu is never drawn.
