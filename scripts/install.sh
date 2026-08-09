@@ -29,7 +29,16 @@ CERT_NAME="Starboard Local Signing"
 LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 BUILD_DIR="$REPO_DIR/.build/release"
 BIN_PATH="$BUILD_DIR/Starboard"
-APP_PATH="$BUILD_DIR/Starboard.app"
+# Installed out of the build tree on purpose. Two reasons, both about the
+# Accessibility permission:
+#
+#   1. Adding an app to Privacy & Security -> Accessibility by hand goes through
+#      a file picker, and .build is a dot-directory the picker hides unless you
+#      know to press Cmd+Shift+period. ~/Applications is where it looks first.
+#   2. `swift build` owns .build and may replace or remove what is in it. A
+#      permission entry pointing there is aimed at a disposable path.
+APP_DIR="$HOME/Applications"
+APP_PATH="$APP_DIR/Starboard.app"
 APP_BIN_PATH="$APP_PATH/Contents/MacOS/Starboard"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_PATH="$HOME/Library/Logs/Starboard.log"
@@ -72,6 +81,7 @@ echo "Building release binary..."
 (cd "$REPO_DIR" && swift build -c release)
 
 echo "Packaging $APP_PATH..."
+mkdir -p "$APP_DIR"
 rm -rf "$APP_PATH"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$BIN_PATH" "$APP_BIN_PATH"

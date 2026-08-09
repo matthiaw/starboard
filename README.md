@@ -133,6 +133,46 @@ A malformed file never stops the panel from starting: every problem is reported
 in `~/Library/Logs/Starboard.log` and then ignored. Keys starting with `_` are
 treated as comments, since JSON has none.
 
+## Accessibility permission
+
+Needed to read the Dock's geometry. Without it Starboard still runs — it just
+sits at a fixed corner instead of flush against the Dock.
+
+```bash
+scripts/grant-accessibility.sh          # guided, and verifies the result
+scripts/grant-accessibility.sh --check  # granted | denied | unknown, exit 0/1/2
+```
+
+**The script cannot grant it, and neither can anything else** short of disabling
+SIP: the TCC database is protected and `tccutil` only resets entries, never
+creates them. That is the point of the mechanism — a program that could grant
+itself Accessibility could read every keystroke on the machine.
+
+What it does instead is remove every other obstacle:
+
+- reports the current state, from a source you can check rather than by guessing
+- opens the exact settings pane
+- reveals the app in Finder so it can be dragged into the list
+- restarts Starboard afterwards and tells you whether the grant actually took
+
+Two things about the state make this possible, and neither existed before:
+
+**Starboard now says so.** It writes `accessibility trusted = yes|no` to stderr
+at every launch, which the LaunchAgent sends to `~/Library/Logs/Starboard.log`.
+Previously the only signal was a line fed into the terminal panel — unreadable
+by any script, and gone from a two-row panel within seconds. There is no other
+way to ask: `TCC.db` needs Full Disk Access to query, and `AXIsProcessTrusted`
+answers only for the calling process, not for another app.
+
+**The app installs to `~/Applications/Starboard.app`.** It used to be launched
+straight out of `.build/release/`, which broke this step twice over: the file
+picker hides dot-directories unless you know about ⌘⇧period, and `swift build`
+owns that tree and may replace what a permission entry points at.
+
+If a row exists and is switched on but the panel still is not tracking the Dock,
+remove the row with "−" and add it again — an entry from an older build can look
+enabled while no longer being valid.
+
 ## Right-click menu
 
 Copy, Paste, Select All, Toggle Expanded, Reveal Config in Finder, Quit. The key
@@ -144,7 +184,8 @@ has no way to discover it.
 
 ```bash
 scripts/test-config.sh          # 15 checks on the config parser
-scripts/test-term-program.sh    # 4 checks that TERM_PROGRAM reaches the shell
+scripts/test-term-program.sh    #  4 checks that TERM_PROGRAM reaches the shell
+scripts/test-accessibility.sh   # 10 checks on the permission state reporting
 ```
 
 Both drive the real built app rather than mocking anything, and both start with a

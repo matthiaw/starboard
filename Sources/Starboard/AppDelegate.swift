@@ -85,6 +85,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         isExpanded = config.startExpanded
 
+        // Report the Accessibility state on stderr, which the LaunchAgent sends
+        // to ~/Library/Logs/Starboard.log. Until now the only signal was a line
+        // fed into the terminal panel, which no script can read and which
+        // scrolls out of a two-row panel almost immediately — so "is the
+        // permission actually in effect?" had no answer outside System Settings.
+        // scripts/grant-accessibility.sh greps for exactly this line.
+        FileHandle.standardError.write(Data(
+            "starboard: accessibility trusted = \(accessibilityTrusted ? "yes" : "no")\n".utf8))
+
         setUpMainMenu()
 
         let panel = KeyablePanel(
