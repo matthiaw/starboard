@@ -263,6 +263,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !environment.contains(where: { $0.hasPrefix("SHELL=") }) {
             environment.append("SHELL=\(shellExecutable)")
         }
+
+        // Identify the terminal, the way every other one does: WezTerm sets
+        // TERM_PROGRAM=WezTerm, Apple Terminal Apple_Terminal, iTerm iTerm.app.
+        // Without it a Starboard shell is indistinguishable from any other, and
+        // that makes Starboard-only behaviour impossible to express: the panel
+        // runs a login shell, so anything put in .zshrc to set it up applies to
+        // every zsh session on the machine. Attaching this panel to a tmux
+        // session, for instance, would hijack every terminal tab as well.
+        //
+        // With it, the user's own config can branch:
+        //
+        //     [[ "$TERM_PROGRAM" == Starboard && -z "$TMUX" ]] && tmux attach
+        //
+        // Appended rather than assigned, so a future SwiftTerm that provides it
+        // wins instead of being silently shadowed.
+        if !environment.contains(where: { $0.hasPrefix("TERM_PROGRAM=") }) {
+            environment.append("TERM_PROGRAM=Starboard")
+        }
+        // Only when the bundle actually carries a version. Hardcoding one here
+        // would be a second copy of VERSION to keep in sync; absent is honest.
+        if !environment.contains(where: { $0.hasPrefix("TERM_PROGRAM_VERSION=") }),
+           let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+           !version.isEmpty {
+            environment.append("TERM_PROGRAM_VERSION=\(version)")
+        }
         return environment
     }
 

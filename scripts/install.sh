@@ -33,6 +33,8 @@ APP_PATH="$BUILD_DIR/Starboard.app"
 APP_BIN_PATH="$APP_PATH/Contents/MacOS/Starboard"
 PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_PATH="$HOME/Library/Logs/Starboard.log"
+# Read rather than duplicated, so TERM_PROGRAM_VERSION cannot drift from VERSION.
+VERSION="$(tr -d '[:space:]' < "$REPO_DIR/VERSION" 2>/dev/null || echo "0")"
 
 if ! security find-certificate -c "$CERT_NAME" "$LOGIN_KEYCHAIN" >/dev/null 2>&1; then
     echo "Creating local code-signing certificate ($CERT_NAME)..."
@@ -90,6 +92,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$VERSION</string>
     <key>LSUIElement</key>
     <true/>
 </dict>
