@@ -175,10 +175,37 @@ enabled while no longer being valid.
 
 ## Right-click menu
 
-Copy, Paste, Select All, Toggle Expanded, Reveal Config in Finder, Quit. The key
-equivalents (⌘C/⌘V/⌘A/⌘E/⌘Q) still work; the menu exists because there is no
-menu bar, no Dock icon and no title bar, so a user who does not already know ⌘E
-has no way to discover it.
+Copy, Paste, Select All, Toggle Expanded, **Tint Colour…**, Reveal Config in
+Finder, Quit. The key equivalents (⌘C/⌘V/⌘A/⌘E/⌘Q) still work; the menu exists
+because there is no menu bar, no Dock icon and no title bar, so a user who does
+not already know ⌘E has no way to discover it.
+
+**AppKit's own additions are removed.** SwiftTerm's `TerminalView` conforms to
+`NSTextInputClient`, so macOS treats the panel as a text field and appends
+AutoFill, Services and Spelling to any menu shown on it. Those belong to a form,
+not to a terminal. They are filtered by **tag, not by title**: the titles are
+localised, so matching "AutoFill" would silently stop working on a German system
+and would miss whatever macOS adds next.
+
+## Colour picker
+
+Right-click → **Tint Colour…** opens the system colour panel for the panel tint,
+with alpha — which is the transparency.
+
+Changes apply **live**, before anything is saved. Not a nicety: the tint sits over
+a blur on top of whatever is behind the panel, so the same colour reads
+completely differently against a bright wallpaper than a dark one. Picking it
+from a swatch is guesswork.
+
+The result is written to the config when the picker closes, not on every drag —
+the panel emits a change per mouse movement. The write is a read-modify-write of
+just the `tint` key: `fontSize`, `material`, `palette` and even the `_`-prefixed
+comments survive untouched. Dumping the in-memory config instead would
+materialise every default into your file, so a later change to a default would
+never reach you again.
+
+For the palette and everything else, edit the file — 16 colours through a picker
+would be more clicking than typing.
 
 ## Tests
 
@@ -186,6 +213,7 @@ has no way to discover it.
 scripts/test-config.sh          # 15 checks on the config parser
 scripts/test-term-program.sh    #  4 checks that TERM_PROGRAM reaches the shell
 scripts/test-accessibility.sh   # 10 checks on the permission state reporting
+scripts/test-menu.sh            # 18 checks on the menu strip and the tint write
 ```
 
 Both drive the real built app rather than mocking anything, and both start with a

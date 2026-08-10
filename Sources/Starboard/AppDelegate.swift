@@ -11,9 +11,39 @@ private func ansiColor(_ red: UInt16, _ green: UInt16, _ blue: UInt16) -> Color 
     Color(red: red * 257, green: green * 257, blue: blue * 257)
 }
 
+/// Tag on every menu item Starboard owns.
+///
+/// Filtering by title would be wrong: AppKit's additions are localised, so
+/// "AutoFill" is "Automatisch ausfüllen" on a German system and the match would
+/// silently stop working. Marking our own items and dropping everything else is
+/// locale-proof and also survives macOS adding new entries later.
+let starboardMenuTag = 0x5342 // 'SB'
+
+/// The panel's terminal, with AppKit's context-menu additions removed.
+///
+/// SwiftTerm's TerminalView conforms to NSTextInputClient, which is what makes
+/// macOS treat the panel as a text field and append AutoFill, Services and
+/// Spelling to any menu shown on it. Those belong to a form, not to a terminal.
+final class PanelTerminalView: LocalProcessTerminalView {
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        super.willOpenMenu(menu, with: event)
+        PanelTerminalView.stripForeignItems(from: menu)
+    }
+
+    /// Removes every item Starboard did not add. Static and internal so the
+    /// --dump-menu self-check can exercise exactly this code.
+    static func stripForeignItems(from menu: NSMenu) {
+        for item in menu.items.reversed() where item.tag != starboardMenuTag {
+            menu.removeItem(item)
+        }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel!
-    private var terminalView: LocalProcessTerminalView!
+    private var terminalView: PanelTerminalView!
+    /// Kept so the colour selector can repaint it live.
+    private var tintView: NSView!
     private var trackingTimer: Timer!
     /// Toggled by the hidden Cmd+E menu item. When true, `currentFrame()`
     /// grows the panel upward to the top of the screen instead of matching
@@ -134,12 +164,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and macOS release. This tint is constant instead: always close
         // to black, independent of what's behind the panel.
         let tintView = NSView(frame: effectView.bounds)
+        self.tintView = tintView
         tintView.autoresizingMask = [.width, .height]
         tintView.wantsLayer = true
         tintView.layer?.backgroundColor = panelTintColor.cgColor
         effectView.addSubview(tintView)
 
-        let terminal = LocalProcessTerminalView(frame: terminalContentFrame(in: effectView.bounds))
+        let terminal = PanelTerminalView(frame: terminalContentFrame(in: effectView.bounds))
         // Width only — height is recomputed and recentered explicitly in
         // syncFrameToDock, since SwiftTerm's row count is a floor() of
         // pixel height and rarely divides it evenly, leaving slack that
@@ -296,28 +327,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The right-click menu. Same actions as the hidden main menu, which is only
     /// reachable by key equivalent — this is the discoverable path to them.
-    private func buildContextMenu() -> NSMenu {
+    func buildContextMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        menu.addItem(.separator())
 
-        let expand = NSMenuItem(title: "Toggle Expanded",
-                                action: #selector(toggleExpanded(_:)), keyEquivalent: "e")
-        expand.target = self
-        menu.addItem(expand)
+        func add(_ title: String, _ action: Selector, _ key: String, target: AnyObject? = nil) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.tag = starboardMenuTag
+            item.target = target
+            menu.addItem(item)
+        }
+        func separator() {
+            let item = NSMenuItem.separator()
+            item.tag = starboardMenuTag
+            menu.addItem(item)
+        }
 
-        let reveal = NSMenuItem(title: "Reveal Config in Finder",
-                                action: #selector(revealConfig(_:)), keyEquivalent: "")
-        reveal.target = self
-        menu.addItem(reveal)
-
-        menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit Starboard",
-                              action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+        // No target: routed through the responder chain to the terminal view.
+        add("Copy", #selector(NSText.copy(_:)), "c")
+        add("Paste", #selector(NSText.paste(_:)), "v")
+        add("Select All", #selector(NSText.selectAll(_:)), "a")
+        separator()
+        add("Toggle Expanded", #selector(toggleExpanded(_:)), "e", target: self)
+        add("Tint Colour…", #selector(chooseTintColour(_:)), "", target: self)
+        add("Reveal Config in Finder", #selector(revealConfig(_:)), "", target: self)
+        separator()
+        add("Quit Starboard", #selector(NSApplication.terminate(_:)), "q")
         return menu
+    }
+
+    /// Opens the system colour picker for the panel tint, applying every change
+    /// live and writing the result to the config when the panel closes.
+    ///
+    /// Live rather than on-confirm because the tint sits over a blur on top of
+    /// whatever is behind the panel: the same colour reads completely differently
+    /// against a bright wallpaper than against a dark one, so picking it against a
+    /// swatch is guesswork. Alpha is the transparency, hence showsAlpha.
+    @objc private func chooseTintColour(_ sender: Any?) {
+        let picker = NSColorPanel.shared
+        picker.showsAlpha = true
+        picker.color = config.tint
+        picker.setTarget(self)
+        picker.setAction(#selector(tintColourChanged(_:)))
+        // A nonactivating panel never becomes frontmost on its own, so without
+        // this the picker opens behind everything and looks like nothing happened.
+        NSApp.activate(ignoringOtherApps: true)
+        picker.makeKeyAndOrderFront(nil)
+
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification,
+                                                  object: picker)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(tintPickerClosed(_:)),
+            name: NSWindow.willCloseNotification, object: picker)
+    }
+
+    @objc private func tintColourChanged(_ sender: NSColorPanel) {
+        tintView?.layer?.backgroundColor = sender.color.cgColor
+    }
+
+    /// Persists on close, not on every drag: the picker emits a change per mouse
+    /// movement, and rewriting the file hundreds of times would be absurd.
+    @objc private func tintPickerClosed(_ note: Notification) {
+        guard let picker = note.object as? NSColorPanel else { return }
+        let colour = picker.color
+        let alpha = (colour.usingColorSpace(.sRGB) ?? colour).alphaComponent
+        do {
+            try StarboardConfig.saveTint(hex: colour.hexString, alpha: alpha)
+            FileHandle.standardError.write(Data(
+                "starboard: tint saved as \(colour.hexString) alpha \(String(format: "%.2f", alpha))\n".utf8))
+        } catch {
+            FileHandle.standardError.write(Data(
+                "starboard: could not save the tint (\(error.localizedDescription))\n".utf8))
+        }
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification,
+                                                  object: picker)
     }
 
     /// Opens the config directory, creating an annotated starter file when there

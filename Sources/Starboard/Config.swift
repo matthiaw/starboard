@@ -190,6 +190,28 @@ struct StarboardConfig {
         return config
     }
 
+    /// Writes only the tint back, leaving every other key — including the
+    /// _-prefixed comments — as it was. A read-modify-write rather than a dump of
+    /// the in-memory struct: dumping would silently materialise every default
+    /// into the file, so a later change to a default would no longer reach
+    /// anyone who had once used the colour picker.
+    static func saveTint(hex: String, alpha: CGFloat, to url: URL? = nil) throws {
+        let file = url ?? path
+        try FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        var root: [String: Any] = [:]
+        if let data = try? Data(contentsOf: file),
+           let existing = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            root = existing
+        }
+        root["tint"] = ["hex": hex, "alpha": Double(String(format: "%.3f", alpha)) ?? Double(alpha)]
+
+        let data = try JSONSerialization.data(
+            withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: file, options: .atomic)
+    }
+
     private static func warn(_ message: String) {
         FileHandle.standardError.write(Data("starboard config: \(message)\n".utf8))
     }
@@ -223,6 +245,15 @@ extension NSColor {
             green: CGFloat((value >> 8) & 0xFF) / 255,
             blue: CGFloat(value & 0xFF) / 255,
             alpha: 1)
+    }
+
+    /// `#rrggbb`, ignoring alpha — which the config carries separately.
+    var hexString: String {
+        let c = usingColorSpace(.sRGB) ?? self
+        return String(format: "#%02x%02x%02x",
+                      Int(round(c.redComponent * 255)),
+                      Int(round(c.greenComponent * 255)),
+                      Int(round(c.blueComponent * 255)))
     }
 
     /// This colour as a SwiftTerm palette entry.
