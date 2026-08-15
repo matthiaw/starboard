@@ -190,12 +190,24 @@ struct StarboardConfig {
         return config
     }
 
-    /// Writes only the tint back, leaving every other key — including the
-    /// _-prefixed comments — as it was. A read-modify-write rather than a dump of
-    /// the in-memory struct: dumping would silently materialise every default
-    /// into the file, so a later change to a default would no longer reach
-    /// anyone who had once used the colour picker.
+    /// Writes only the tint back, leaving every other key as it was.
     static func saveTint(hex: String, alpha: CGFloat, to url: URL? = nil) throws {
+        try save(key: "tint",
+                 value: ["hex": hex, "alpha": Double(String(format: "%.3f", alpha)) ?? Double(alpha)],
+                 to: url)
+    }
+
+    /// Writes only the font size back, leaving every other key as it was.
+    static func saveFontSize(_ size: CGFloat, to url: URL? = nil) throws {
+        try save(key: "fontSize", value: Double(size), to: url)
+    }
+
+    /// Read-modify-write of a single key, leaving every other key — including
+    /// the _-prefixed comments — as it was. Deliberately not a dump of the
+    /// in-memory struct: dumping would silently materialise every default into
+    /// the file, so a later change to a default would no longer reach anyone
+    /// who had once saved a setting from the UI.
+    private static func save(key: String, value: Any, to url: URL?) throws {
         let file = url ?? path
         try FileManager.default.createDirectory(
             at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -205,7 +217,7 @@ struct StarboardConfig {
            let existing = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
             root = existing
         }
-        root["tint"] = ["hex": hex, "alpha": Double(String(format: "%.3f", alpha)) ?? Double(alpha)]
+        root[key] = value
 
         let data = try JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys])

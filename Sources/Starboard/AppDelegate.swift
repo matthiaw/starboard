@@ -82,7 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// exported as `SHELL` to it (see `childEnvironment`) — kept as one
     /// constant so those two can't drift apart.
     private static let shellExecutable = "/bin/zsh"
-    private let terminalFont: NSFont
+    /// Mutable (unlike everything else read from the config) because the
+    /// font-size menu items change it at runtime; resized via its own
+    /// fontDescriptor so the resolved family survives the change.
+    private var terminalFont: NSFont
+    /// The live size, seeded from the config and moved by the menu items.
+    private var terminalFontSize: CGFloat
     private var starboardAnsiPalette: [Color] { config.palette }
 
     override init() {
@@ -99,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // checking the resolved font if the prompt looks wrong.
         let loaded = StarboardConfig.load()
         config = loaded
+        terminalFontSize = loaded.fontSize
         terminalFont = loaded.fontNames.lazy.compactMap { NSFont(name: $0, size: loaded.fontSize) }.first
             ?? NSFont.monospacedSystemFont(ofSize: loaded.fontSize, weight: .regular)
         super.init()
@@ -312,6 +318,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         appMenu.addItem(withTitle: "Toggle Expanded", action: #selector(toggleExpanded(_:)), keyEquivalent: "e")
+        appMenu.addItem(withTitle: "Increase Font Size", action: #selector(increaseFontSize(_:)), keyEquivalent: "+")
+        appMenu.addItem(withTitle: "Decrease Font Size", action: #selector(decreaseFontSize(_:)), keyEquivalent: "-")
+        appMenu.addItem(withTitle: "Reset Font Size", action: #selector(resetFontSize(_:)), keyEquivalent: "0")
         appMenu.addItem(withTitle: "Quit Starboard", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editMenuItem = NSMenuItem()
@@ -348,6 +357,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add("Select All", #selector(NSText.selectAll(_:)), "a")
         separator()
         add("Toggle Expanded", #selector(toggleExpanded(_:)), "e", target: self)
+        add("Increase Font Size", #selector(increaseFontSize(_:)), "+", target: self)
+        add("Decrease Font Size", #selector(decreaseFontSize(_:)), "-", target: self)
+        add("Reset Font Size", #selector(resetFontSize(_:)), "0", target: self)
         add("Tint Colour…", #selector(chooseTintColour(_:)), "", target: self)
         add("Reveal Config in Finder", #selector(revealConfig(_:)), "", target: self)
         separator()
@@ -427,6 +439,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     """
+
+    @objc private func increaseFontSize(_ sender: Any?) { setFontSize(terminalFontSize + 1) }
+    @objc private func decreaseFontSize(_ sender: Any?) { setFontSize(terminalFontSize - 1) }
+    @objc private func resetFontSize(_ sender: Any?) { setFontSize(StarboardConfig().fontSize) }
+
+    /// Applies a new font size live and persists it to the config file.
+    ///
+    /// The row count follows from the size: the panel's height is the Dock's,
+    /// so a smaller font is the way to fit more than the default two rows
+    /// without expanding. The terminal frame is recomputed directly (not via
+    /// syncFrameToDock, whose early-return fires when the panel frame is
+    /// unchanged — which it is here) so SwiftTerm re-derives its rows and the
+    /// leftover slack is re-centered for the new cell height.
+    private func setFontSize(_ size: CGFloat) {
+        let clamped = min(max(size, 6), 32)
+        guard clamped != terminalFontSize else { return }
+        terminalFontSize = clamped
+        // Resize through the descriptor so the resolved family (Nerd Font,
+        // Menlo, or the SF Mono fallback) is kept rather than re-looked-up.
+        terminalFont = NSFont(descriptor: terminalFont.fontDescriptor, size: clamped) ?? terminalFont
+        terminalView.font = terminalFont
+        terminalView.frame = terminalContentFrame(in: NSRect(origin: .zero, size: panel.frame.size))
+        do {
+            try StarboardConfig.saveFontSize(clamped)
+        } catch {
+            FileHandle.standardError.write(Data(
+                "starboard: could not save the font size (\(error.localizedDescription))\n".utf8))
+        }
+    }
 
     /// Cmd+E, resolved the same key-equivalent way as Copy/Paste/Select All
     /// above — reaches here even though the hidden menu is never drawn.

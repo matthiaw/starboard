@@ -329,12 +329,16 @@ Note that `NSFont(name:)` returns nil for a name that isn't installed, so
 a typo in that list fails silently rather than at build time — if the
 prompt looks wrong, check which entry actually resolved.
 
-`terminalFontSize` is `static` so `init()` can read it while initializing
-`terminalFont`; Swift forbids touching `self` before every stored property
-is set, which is why the size was previously duplicated as a literal in
-`init()` while the property itself went unused. `terminalFont` is computed
-once in `AppDelegate.init()` rather than per-launch, since it's reused by
-both the initial layout and every subsequent resize.
+The font size is adjustable at runtime via the context menu / hidden main
+menu (Increase/Decrease/Reset Font Size, ⌘+/⌘−/⌘0), clamped to 6...32.
+`setFontSize` resizes `terminalFont` through its `fontDescriptor` (so the
+resolved family survives), reassigns `terminalView.font`, recomputes the
+terminal frame directly — not via `syncFrameToDock`, whose early-return
+fires because the panel frame itself is unchanged — and persists the new
+size with `StarboardConfig.saveFontSize` (same read-modify-write helper as
+the tint, so the rest of the config file is left untouched). Reset goes to
+the app default (11), not the config file's value — the menu itself writes
+the config, so the config value is just the last menu choice.
 
 Changing the font family changes the row count. `terminalContentFrame`
 derives rows as `floor(usableHeight / cellHeight)` from
